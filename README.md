@@ -18,6 +18,7 @@ Example: examples/examples.ipynb
     b. Animate planets and solar's tracks;  
         ![animate solar system orbits](examples/Result/animePosition.gif)  
     c. Plot the radial velocity of Sun and Mercury;  
+        ![radial velosity of Sun](examples/Result/SunRadialVelocity.svg.png)  
         ![radial velosity of Mercury](examples/Result/MercuryRadialVelocity.svg.png)  
 2. Sun-Earth-Moon system, but Moon has velocity on z-axis;  
     a. 3D orbits plot;  
