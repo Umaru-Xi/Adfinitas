@@ -31,14 +31,18 @@ mutable struct adfinitasObject
     velocity::adfinitasVector
     time::BigFloat
     timeStep::BigFloat
-    adfinitasObject(name, mass, position, velocity, time) = new(name, mass, position, velocity, time)
+    pastPosition::adfinitasVector
+    pastVelocity::adfinitasVector
+    pastAcceleration::adfinitasVector
+    adfinitasObject(name, mass, position, velocity, time) = new(name, mass, position, velocity, time, 0, adfinitasVector(0., 0., 0.), adfinitasVector(0., 0., 0.), adfinitasVector(0., 0., 0.))
 end
 
 mutable struct adfinitasParameters
-    gravationalConstant::BigFloat
+    gravitationalConstant::BigFloat
     timeStep::BigFloat
     angleResolution::BigFloat
-    adfinitasParameters(gravationalConstant, timeStep, angleResolution) = new(gravationalConstant, timeStep, angleResolution)
+    # updateFunction::Function
+    adfinitasParameters(gravitationalConstant, timeStep, angleResolution) = new(gravitationalConstant, timeStep, angleResolution)
 end
 
 function adfinitasGetArray(vectorObject::adfinitasVector)::Vector{BigFloat}
@@ -61,8 +65,8 @@ function adfinitasInitObjects(configure::adfinitasParameters, objectsArray::Vect
         if orbitRadius == 0
             subObject.timeStep = configure.timeStep;
         else
-            orbitVelosity::BigFloat = sqrt(sum(abs.(velocity) .^ 2));
-            subObject.timeStep = deltaOmega * orbitRadius / orbitVelosity;
+            orbitvelocity::BigFloat = sqrt(sum(abs.(velocity) .^ 2));
+            subObject.timeStep = deltaOmega * orbitRadius / orbitvelocity;
         end
     end
     return objectsArray;
@@ -79,37 +83,50 @@ function adfinitasInitSpecifiedObject(configure::adfinitasParameters, object::ad
     if orbitRadius == 0
         initedObj.timeStep = configure.timeStep;
     else
-        orbitVelosity::BigFloat = sqrt(sum(abs.(velocity) .^ 2));
-        initedObj.timeStep = deltaOmega * orbitRadius / orbitVelosity;
+        orbitvelocity::BigFloat = sqrt(sum(abs.(velocity) .^ 2));
+        initedObj.timeStep = deltaOmega * orbitRadius / orbitvelocity;
     end
     
     return initedObj;
 end
 
 function adfinitasSubAcceleration(configure::adfinitasParameters, motionObject::adfinitasObject, sourceObject::adfinitasObject)::adfinitasVector
-    gravationalConstant::BigFloat = configure.gravationalConstant;
 
     sourcePosition::Vector{BigFloat} = adfinitasGetArray(sourceObject.position);
     motionPosition::Vector{BigFloat} = adfinitasGetArray(motionObject.position);
     distance::BigFloat = sqrt(sum(abs.(sourcePosition .- motionPosition) .^ 2));
 
-    accelerationMod::BigFloat = sourceObject.mass / (distance ^ 2) * gravationalConstant;
+    accelerationMod::BigFloat = sourceObject.mass / (distance ^ 2) * configure.gravitationalConstant;
     accelerationArray::Vector{BigFloat} = accelerationMod / distance .* (sourcePosition .- motionPosition);
     accelerationVector::adfinitasVector = adfinitasGetVector(accelerationArray);
 
     return accelerationVector;
 end
 
-function adfinitasUpdate(timeStep::BigFloat, motionObject::adfinitasObject, accelerationVector::adfinitasVector)::adfinitasObject
+function adfinitasUpdatePosition!(timeStep::BigFloat, motionObject::adfinitasObject, accelerationVector::adfinitasVector)::adfinitasObject
     velocity::Vector{BigFloat} = adfinitasGetArray(motionObject.velocity);
     position::Vector{BigFloat} = adfinitasGetArray(motionObject.position);
     acceleration::Vector{BigFloat} = adfinitasGetArray(accelerationVector);
 
-    newVelocity::Vector{BigFloat} = velocity .+ (timeStep .* acceleration);
-    newPosition::Vector{BigFloat} = position .+ ((timeStep / 2) .* velocity) .+ ((timeStep / 2) .* newVelocity);
+    # Velocity Verlet
+    newPosition::Vector{BigFloat} = position .+ (timeStep .* velocity) .+ ((timeStep * timeStep / 2) .* acceleration);
+
+    motionObject.position = adfinitasGetVector(newPosition);
+
+    return motionObject;
+end
+
+function adfinitasUpdateVelocity!(timeStep::BigFloat, motionObject::adfinitasObject, accelerationVector::adfinitasVector)::adfinitasObject
+    velocity::Vector{BigFloat} = adfinitasGetArray(motionObject.velocity);
+    # position::Vector{BigFloat} = adfinitasGetArray(motionObject.position);
+    acceleration::Vector{BigFloat} = adfinitasGetArray(accelerationVector);
+
+    # Velocity Verlet
+    lastAcceleration::Vector{BigFloat} = adfinitasGetArray(motionObject.pastAcceleration);
+    newVelocity::Vector{BigFloat} = velocity .+ ((timeStep / 2) .* (acceleration .+ lastAcceleration));
 
     motionObject.velocity = adfinitasGetVector(newVelocity);
-    motionObject.position = adfinitasGetVector(newPosition);
+    motionObject.pastAcceleration = accelerationVector;
 
     return motionObject;
 end
@@ -125,7 +142,7 @@ function adfinitasAcceleration(configure::adfinitasParameters, motionObject::adf
     return accelerationVector;
 end
 
-function adfinitasOneStep(configure::adfinitasParameters, objectsArray::Vector{adfinitasObject})::Vector{adfinitasObject}
+function adfinitasOneStep(configure::adfinitasParameters, objectsArray::Vector{adfinitasObject}, isPosition::Bool)::Vector{adfinitasObject}
 
     clonedObjectsArray::Vector{adfinitasObject} = deepcopy(objectsArray);
     distributedClonedObjectsArray::DArray = distribute([adfinitasObject[] for _ in procs()]);
@@ -150,9 +167,20 @@ function adfinitasOneStep(configure::adfinitasParameters, objectsArray::Vector{a
                     timeStep = aimTime - motionObject.time;
                 end
             end
-            accelerationVector::adfinitasVector = adfinitasAcceleration(configure, motionObject, objectsArray);
-            motionObject = adfinitasUpdate(timeStep, motionObject, accelerationVector);
-            motionObject.time += timeStep;
+            accelerationVector::adfinitasVector = adfinitasVector(0., 0., 0.);
+            # motionObject = configure.updateFunction(timeStep, motionObject, accelerationVector);
+            if isPosition
+                if sum(abs.(adfinitasGetArray(motionObject.pastAcceleration))) == 0.
+                    accelerationVector = adfinitasAcceleration(configure, motionObject, objectsArray);
+                else
+                    accelerationVector = motionObject.pastAcceleration;
+                end
+                motionObject = adfinitasUpdatePosition!(timeStep, motionObject, accelerationVector);
+                motionObject.time += timeStep;
+            else
+                accelerationVector = adfinitasAcceleration(configure, motionObject, objectsArray);
+                motionObject = adfinitasUpdateVelocity!(timeStep, motionObject, accelerationVector);
+            end
         end
         push!(localpart(distributedClonedObjectsArray)[1], motionObject);
     end
@@ -202,7 +230,8 @@ function adfinitasRun(configure::adfinitasParameters, simulationTime::BigFloat, 
     simulationLength::Int128 = convert(Int128, floor(simulationTime / configure.timeStep));
 
     @showprogress for times in 1 : simulationLength
-        objsArray = adfinitasOneStep(configure, objsArray);
+        objsArray = adfinitasOneStep(configure, objsArray, true);
+        objsArray = adfinitasOneStep(configure, objsArray, false);
         append!(objsMotionList, objsArray);
     end
 

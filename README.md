@@ -23,8 +23,6 @@ Example: examples/examples.ipynb
 2. Sun-Earth-Moon system, but Moon has velocity on z-axis;  
     a. 3D orbits plot;  
         ![Sun-Earth-Moon system orbits 3D](examples/Result/MoonPosition.svg.png)  
-3. N-Body simulation with a galaxy;  
-    a. 100-body animate on 2D;  
-        ![100-body animation 2D](examples/Result/anime2DGalaxyPosition.gif)  
-    b. 1000-body animate on 3D;  
+3. N-Body simulation with a galaxy;   
+    a. 1000-body animate on 3D;  
         ![1000-body animation 3D](examples/Result/animeGalaxyPosition.gif)  
