@@ -1,5 +1,7 @@
 # Adfīnitās
 
+Warning! This program has been changed to C language as [CAdfinitas](https://github.com/Umaru-Xi/CAdfinitas "CAdfinitas"). This package will not be developed acivity.
+
 Julia N-body simulation package, support parallel and distributed computing.  
 
 * * *  
